@@ -15,7 +15,7 @@ def _normalize_spaces(text: str) -> str:
 
 def _extract_destination(body: str) -> tuple[str, str | None, str | None]:
     destination = re.search(
-        r"\s+dans\s+(google|apple|icloud)\s+(.+?)\s*$",
+        r"\s+(?:dans|sur|de|du)\s+(google|apple|icloud)\s+(.+?)\s*$",
         body,
         flags=re.I,
     )

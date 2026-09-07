@@ -84,6 +84,8 @@ def serializable_event_ref(event: dict) -> dict:
         "all_day": bool(event.get("all_day")),
         "recurring": bool(event.get("recurring")),
         "source": event.get("source", ""),
+        "resource_url": event.get("resource_url", ""),
+        "etag": event.get("etag"),
     }
 
 

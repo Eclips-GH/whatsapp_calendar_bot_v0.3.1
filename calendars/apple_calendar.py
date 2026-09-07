@@ -80,13 +80,13 @@ def _normalize_dt(value):
     raise ValueError(f"Date iCloud non reconnue : {value!r}")
 
 
-def _resource_by_uid(calendar, uid: str):
-    if hasattr(calendar, "get_event_by_uid"):
-        return calendar.get_event_by_uid(uid)
-    return calendar.event_by_uid(uid)
-
-
-def _component_to_dict(component, calendar_name: str) -> dict:
+def _component_to_dict(
+    component,
+    calendar_name: str,
+    *,
+    resource_url: str | None = None,
+    etag: str | None = None,
+) -> dict:
     start_dt, all_day = _normalize_dt(component.decoded("DTSTART"))
 
     if component.get("DTEND") is not None:
@@ -108,8 +108,50 @@ def _component_to_dict(component, calendar_name: str) -> dict:
         "provider": "apple",
         "calendar_name": calendar_name,
         "id": uid,
+        "resource_url": resource_url or "",
+        "etag": etag,
         "recurring": bool(component.get("RRULE") or component.get("RECURRENCE-ID")),
     }
+
+
+def _resource_from_reference(
+    calendar,
+    *,
+    resource_url: str | None,
+    uid: str,
+    load: bool,
+):
+    """Résout un événement iCloud sans requête CalDAV filtrée par UID.
+
+    iCloud renvoie parfois HTTP 412 sur les calendar-query filtrées par UID.
+    On utilise donc en priorité l'URL opaque renvoyée par iCloud lors de la lecture.
+    Le scan sans filtre n'est qu'un fallback pour d'anciennes références.
+    """
+    if resource_url:
+        resource = caldav.Event(
+            client=calendar.client,
+            url=resource_url,
+            parent=calendar,
+            id=uid or None,
+        )
+        if load:
+            resource.load()
+        return resource
+
+    # Compatibilité avec des références créées avant V0.3.2.
+    # Surtout ne pas utiliser get_event_by_uid() sur iCloud : cette méthode
+    # effectue une calendar-query UID qui peut être rejetée avec HTTP 412.
+    for resource in calendar.get_events():
+        try:
+            component = resource.get_icalendar_component()
+            if str(component.get("UID", "")) == uid:
+                if load:
+                    resource.load()
+                return resource
+        except Exception:
+            continue
+
+    raise ValueError("Événement Apple introuvable sur le serveur.")
 
 
 def list_apple_events(start: datetime, end: datetime) -> list[dict]:
@@ -129,8 +171,15 @@ def list_apple_events(start: datetime, end: datetime) -> list[dict]:
 
             for event in found:
                 try:
+                    resource_url = str(event.url) if getattr(event, "url", None) else ""
+                    etag = getattr(event, "etag", None)
                     output.append(
-                        _component_to_dict(event.get_icalendar_component(), calendar_name)
+                        _component_to_dict(
+                            event.get_icalendar_component(),
+                            calendar_name,
+                            resource_url=resource_url,
+                            etag=etag,
+                        )
                     )
                 except Exception as exc:
                     print(f"Erreur événement Apple dans '{calendar_name}' : {exc}")
@@ -153,8 +202,16 @@ def create_apple_event(title: str, start: datetime, end: datetime, calendar_name
             dtend=end.astimezone(TZ),
         )
 
+        resource_url = str(created.url) if getattr(created, "url", None) else ""
+        etag = getattr(created, "etag", None)
+
         try:
-            return _component_to_dict(created.get_icalendar_component(), resolved_name)
+            return _component_to_dict(
+                created.get_icalendar_component(),
+                resolved_name,
+                resource_url=resource_url,
+                etag=etag,
+            )
         except Exception:
             return {
                 "id": "",
@@ -166,6 +223,8 @@ def create_apple_event(title: str, start: datetime, end: datetime, calendar_name
                 "provider": "apple",
                 "calendar_name": resolved_name,
                 "source": f"Apple • {resolved_name}",
+                "resource_url": resource_url,
+                "etag": etag,
                 "recurring": False,
             }
 
@@ -174,6 +233,7 @@ def update_apple_event(
     *,
     calendar_name: str,
     uid: str,
+    resource_url: str | None = None,
     new_title: str | None = None,
     new_start: datetime | None = None,
     new_end: datetime | None = None,
@@ -189,7 +249,12 @@ def update_apple_event(
         calendars = client.principal().calendars()
         calendar = _find_apple_calendar(calendars, calendar_name)
         resolved_name = calendar.get_display_name() or calendar_name
-        resource = _resource_by_uid(calendar, uid)
+        resource = _resource_from_reference(
+            calendar,
+            resource_url=resource_url,
+            uid=uid,
+            load=True,
+        )
 
         with resource.edit_icalendar_component() as component:
             if new_title is not None:
@@ -205,12 +270,27 @@ def update_apple_event(
                 component.add("DTEND", new_end.astimezone(TZ))
 
         resource.save()
-        return _component_to_dict(resource.get_icalendar_component(), resolved_name)
+        return _component_to_dict(
+            resource.get_icalendar_component(),
+            resolved_name,
+            resource_url=str(resource.url) if getattr(resource, "url", None) else resource_url,
+            etag=getattr(resource, "etag", None),
+        )
 
 
-def delete_apple_event(*, calendar_name: str, uid: str) -> None:
+def delete_apple_event(
+    *,
+    calendar_name: str,
+    uid: str,
+    resource_url: str | None = None,
+) -> None:
     with _client() as client:
         calendars = client.principal().calendars()
         calendar = _find_apple_calendar(calendars, calendar_name)
-        resource = _resource_by_uid(calendar, uid)
+        resource = _resource_from_reference(
+            calendar,
+            resource_url=resource_url,
+            uid=uid,
+            load=False,
+        )
         resource.delete()

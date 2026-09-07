@@ -1,163 +1,95 @@
-# WhatsApp Calendar Bot — V0.3.1
+# WhatsApp Calendar Bot — V0.4
 
-V0.3 ajoute la recherche, la modification et la suppression d'événements sur Google Calendar et Apple/iCloud.
+V0.4 branche le moteur calendrier existant sur WhatsApp Cloud API.
 
-## Déjà disponible
+## Fonctions calendrier
 
-- lecture de tous les calendriers Google ;
-- lecture de tous les calendriers Apple/iCloud ;
-- provenance affichée pour chaque événement ;
-- création dans un calendrier précis ;
-- recherche par titre ;
-- suppression ;
+- Google Calendar + Apple/iCloud ;
+- lecture de tous les calendriers avec provenance ;
+- création ;
+- recherche ;
 - renommage ;
-- déplacement de date/heure ;
-- gestion des ambiguïtés par choix numéroté.
+- déplacement date/heure ;
+- transfert Google ↔ Apple ;
+- suppression ;
+- ambiguïtés par choix numéroté.
 
-## Commandes
+## Nouveautés V0.4
 
-### Lire
+- webhook WhatsApp `GET/POST /webhook` ;
+- réponses texte via Meta Graph API ;
+- liste blanche `WHATSAPP_ALLOWED_NUMBERS` ;
+- déduplication des messages Meta avec SQLite ;
+- validation `X-Hub-Signature-256` si `META_APP_SECRET` est configuré ;
+- diagnostic `GET /health`.
 
-```text
-calendriers
-calendriers modifiables
-aujourd'hui
-demain
-```
+## Mise à jour depuis V0.3.2
 
-### Rechercher
-
-```text
-Cherche Dentiste
-Cherche Anniv Osiris
-Cherche Réunion dans Google PRO
-```
-
-La recherche regarde par défaut les 30 derniers jours et les 365 prochains jours.
-
-### Créer
-
-```text
-Ajoute Dentiste demain à 14h dans Google Travail
-Ajoute Restaurant samedi à 19h pendant 2h dans Apple César
-Ajoute Réunion le 10/09/2026 de 09h30 à 11h dans Google PRO
-```
-
-### Supprimer
-
-```text
-Supprime Test Bot
-Supprime Test Bot demain
-Supprime Test Bot dans Google Travail
-```
-
-### Renommer
-
-```text
-Renomme Test Bot en Dentiste
-Renomme Test Bot en Dentiste dans Apple César
-```
-
-### Déplacer
-
-Conserve automatiquement la durée originale de l'événement.
-
-```text
-Déplace Dentiste à 16h
-Déplace Dentiste demain à 16h
-Déplace Dentiste le 12/09/2026 à 09h30
-```
-
-## Ambiguïtés
-
-Si plusieurs événements correspondent :
-
-```text
-J'ai trouvé 2 événements correspondants :
-1. Test Bot — 08.09.2026 14:00 [Google • Travail]
-2. Test Bot — 08.09.2026 15:00 [Apple • César]
-
-Réponds simplement avec le numéro, ou « annule ».
-```
-
-Le choix en attente est enregistré dans `bot_state.db`, donc il fonctionne aussi entre deux exécutions séparées en PowerShell. L'état expire après 30 minutes.
-
-## Limites V0.3
-
-Pour éviter les suppressions accidentelles d'une série entière, la modification/suppression des événements Apple récurrents est volontairement bloquée dans cette version.
-
-Le déplacement horaire d'un événement « toute la journée » est également bloqué pour le moment.
-
-## Mise à jour depuis V0.2
-
-Utilise le ZIP **UPDATE** et extrais-le directement dans ton dossier V0.2 en acceptant le remplacement des fichiers de code.
-
-**Ne supprime pas ton dossier actuel.**
-
-Ces fichiers doivent rester intacts :
+Extraire le ZIP UPDATE directement dans le dossier existant. Ne pas supprimer :
 
 ```text
 .env
 credentials.json
 token.json
 venv/
+bot_state.db
 ```
 
-Aucune nouvelle dépendance Python n'est nécessaire pour V0.3. SQLite est inclus dans Python.
+Aucune nouvelle dépendance Python.
 
-## Tests conseillés
+## Configuration `.env`
 
-Recherche :
+Ajouter :
+
+```env
+WHATSAPP_VERIFY_TOKEN=<valeur aléatoire>
+META_APP_SECRET=
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_ALLOWED_NUMBERS=41791234567
+WHATSAPP_GRAPH_VERSION=v26.0
+WHATSAPP_STATE_DB=whatsapp_state.db
+```
+
+Le numéro autorisé est en format international, chiffres uniquement. Exemple Suisse : `41791234567`.
+
+## Test local
 
 ```powershell
-python -c "from services.command_router import handle_command; print(handle_command('Cherche Test Bot'))"
+venv\Scripts\activate
+python app.py
 ```
 
-Renommage :
+Puis ouvrir :
 
-```powershell
-python -c "from services.command_router import handle_command; print(handle_command('Renomme Test Bot en Test Bot V03'))"
+```text
+http://127.0.0.1:5000/health
 ```
 
-Déplacement :
+La réponse ne contient aucun secret.
 
-```powershell
-python -c "from services.command_router import handle_command; print(handle_command('Déplace Test Bot V03 demain à 16h'))"
+## Webhook Meta
+
+Callback URL :
+
+```text
+https://TON-URL-PUBLIQUE/webhook
 ```
 
-Suppression :
+Verify token : exactement la valeur de `WHATSAPP_VERIFY_TOKEN`.
 
-```powershell
-python -c "from services.command_router import handle_command; print(handle_command('Supprime Test Bot V03'))"
-```
+Le webhook doit être publiquement accessible en HTTPS. Pour un test local, un tunnel HTTPS temporaire peut être utilisé.
 
-Si plusieurs résultats apparaissent, exécute ensuite par exemple :
+## Sécurité
 
-```powershell
-python -c "from services.command_router import handle_command; print(handle_command('2'))"
-```
-
-## Secrets
+Le bot refuse tous les expéditeurs si `WHATSAPP_ALLOWED_NUMBERS` est vide.
 
 Ne jamais publier :
 
-- `.env`
-- `credentials.json`
-- `token.json`
-- `venv/`
-- `bot_state.db`
-
-
-## V0.3.1 — transfert entre calendriers
-
-Exemples :
-
 ```text
-Déplace Dentiste vers Apple César
-Transfère Dentiste vers Google Travail
-Déplace Dentiste demain à 16h vers Apple César
+.env
+credentials.json
+token.json
+bot_state.db
+whatsapp_state.db
 ```
-
-Le transfert inter-calendriers conserve le titre, la date, l’heure et la durée.
-Les événements récurrents et les événements « toute la journée » ne sont pas
-transférés dans cette version pour éviter une modification destructive.

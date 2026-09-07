@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+import re
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from calendars.google_calendar import (
@@ -21,7 +22,7 @@ from services.action_parser import (
     parse_search_command,
 )
 from services.event_actions import delete_event, move_event, rename_event, transfer_event
-from services.event_parser import parse_create_command
+from services.event_parser import DATE_PATTERN, parse_create_command, parse_date_expression
 from services.event_search import find_events, serializable_event_ref
 from services.pending_store import clear_pending, get_pending, save_pending
 
@@ -39,9 +40,7 @@ def _format_events(events: list[dict], label: str) -> str:
     return "\n".join(lines)
 
 
-def _events_for_day(day_offset: int, label: str) -> str:
-    now = datetime.now(TZ)
-    target = (now + timedelta(days=day_offset)).date()
+def _events_for_date(target: date, label: str) -> str:
     start = datetime(target.year, target.month, target.day, tzinfo=TZ)
     end = start + timedelta(days=1)
 
@@ -67,6 +66,41 @@ def _events_for_day(day_offset: int, label: str) -> str:
     if errors:
         result += "\n\n⚠️ " + " | ".join(errors)
     return result
+
+
+def _events_for_day(day_offset: int, label: str) -> str:
+    now = datetime.now(TZ)
+    target = (now + timedelta(days=day_offset)).date()
+    return _events_for_date(target, label)
+
+
+def _date_query(text: str) -> tuple[date, str] | None:
+    raw = " ".join(text.strip().split())
+    lowered = raw.casefold()
+
+    # Permet aussi « agenda samedi » ou « j'ai quoi vendredi ».
+    prefixes = (
+        "agenda ",
+        "j'ai quoi ",
+        "jai quoi ",
+        "qu'est-ce que j'ai ",
+        "qu est ce que j ai ",
+    )
+    for prefix in prefixes:
+        if lowered.startswith(prefix):
+            raw = raw[len(prefix):].strip()
+            break
+
+    if not re.fullmatch(DATE_PATTERN, raw, flags=re.I):
+        return None
+
+    target = parse_date_expression(raw, datetime.now(TZ))
+    weekdays = (
+        "Lundi", "Mardi", "Mercredi", "Jeudi",
+        "Vendredi", "Samedi", "Dimanche"
+    )
+    label = f"{weekdays[target.weekday()]} {target.strftime('%d.%m.%Y')}"
+    return target, label
 
 
 def _calendar_list() -> str:
@@ -318,14 +352,15 @@ def handle_command(text: str, user_id: str = "local") -> str:
 
     if normalized in {"aide", "help", "commandes", "menu"}:
         return (
-            "Commandes V0.3.1 :\n"
+            "Commandes V0.4 :\n"
             "• calendriers\n"
             "• calendriers modifiables\n"
-            "• aujourd'hui / demain\n"
+            "• aujourd'hui / demain / samedi / 12.09.2026\n"
             "• Cherche Dentiste\n"
             "• Ajoute Dentiste demain à 14h dans Google Travail\n"
             "• Supprime Dentiste\n"
             "• Supprime Dentiste demain\n"
+            "• Supprime Dentiste de Apple Domicile\n"
             "• Renomme Dentiste en Contrôle dentiste\n"
             "• Déplace Dentiste demain à 16h\n"
             "• Déplace Dentiste vers Apple César\n"
@@ -344,6 +379,11 @@ def handle_command(text: str, user_id: str = "local") -> str:
 
     if normalized in {"demain", "j'ai quoi demain", "jai quoi demain", "agenda demain"}:
         return _events_for_day(1, "Demain")
+
+    parsed_date_query = _date_query(text)
+    if parsed_date_query is not None:
+        target, label = parsed_date_query
+        return _events_for_date(target, label)
 
     try:
         if normalized.startswith(("ajoute ", "ajouter ", "crée ", "cree ", "créer ", "creer ")):

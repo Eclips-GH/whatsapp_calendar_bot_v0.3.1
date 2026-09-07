@@ -6,20 +6,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from services.whatsapp import extract_text_messages, send_text_message
+from services.whatsapp import (
+    allowed_numbers,
+    extract_text_messages,
+    sender_is_allowed,
+    send_text_message,
+    whatsapp_is_configured,
+)
+from services.whatsapp_state import claim_message
 from services.command_router import handle_command
 
 app = Flask(__name__)
 
-VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "")
-META_APP_SECRET = os.getenv("META_APP_SECRET", "")
+VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "").strip()
+META_APP_SECRET = os.getenv("META_APP_SECRET", "").strip()
 
 
 def signature_is_valid(raw_body: bytes, signature_header: str | None) -> bool:
-    """
-    Meta peut signer les webhooks avec X-Hub-Signature-256.
-    Si META_APP_SECRET n'est pas configuré, on n'effectue pas cette vérification.
-    """
+    """Valide X-Hub-Signature-256 si META_APP_SECRET est configuré."""
     if not META_APP_SECRET:
         return True
     if not signature_header or not signature_header.startswith("sha256="):
@@ -39,7 +43,21 @@ def signature_is_valid(raw_body: bytes, signature_header: str | None) -> bool:
 def home():
     return {
         "service": "WhatsApp Calendar Bot",
-        "status": "ok"
+        "version": "0.4",
+        "status": "ok",
+    }
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "whatsapp": {
+            "configured": whatsapp_is_configured(),
+            "verify_token_configured": bool(VERIFY_TOKEN),
+            "app_secret_configured": bool(META_APP_SECRET),
+            "allowed_numbers": len(allowed_numbers()),
+        },
     }
 
 
@@ -49,7 +67,7 @@ def verify_webhook():
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
 
-    if mode == "subscribe" and token == VERIFY_TOKEN:
+    if mode == "subscribe" and VERIFY_TOKEN and token == VERIFY_TOKEN:
         return challenge or "", 200
 
     return "Webhook verification failed", 403
@@ -70,6 +88,17 @@ def receive_webhook():
     for message in extract_text_messages(payload):
         sender = message["from"]
         text = message["text"]
+        message_id = message.get("id")
+
+        if not sender_is_allowed(sender):
+            print(f"WhatsApp sender ignored (not allowed): {sender}")
+            continue
+
+        # Meta peut renvoyer un webhook. On bloque les doublons AVANT
+        # d'exécuter une action calendrier, afin d'éviter deux créations.
+        if not claim_message(message_id):
+            print(f"Duplicate WhatsApp message ignored: {message_id}")
+            continue
 
         try:
             reply = handle_command(text, user_id=sender)
@@ -82,9 +111,13 @@ def receive_webhook():
         except Exception as exc:
             print(f"WhatsApp send error: {exc}")
 
-    # WhatsApp attend une réponse HTTP rapide.
+    # Meta attend un HTTP 200 rapide pour accuser réception du webhook.
     return jsonify({"status": "received"}), 200
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "5000")),
+        debug=os.getenv("FLASK_DEBUG", "0") == "1",
+    )

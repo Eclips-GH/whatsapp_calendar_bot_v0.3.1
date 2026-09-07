@@ -1,0 +1,30 @@
+WhatsApp Calendar Bot — migration V0.3.2 -> V0.4
+
+1. NE SUPPRIME PAS ton dossier actuel.
+2. Extrais le ZIP UPDATE dans le dossier V0.3.2 et accepte le remplacement.
+3. Garde intacts :
+   - .env
+   - credentials.json
+   - token.json
+   - venv/
+   - bot_state.db
+4. Ajoute ces lignes à ton .env :
+
+WHATSAPP_VERIFY_TOKEN=<une valeur aléatoire>
+META_APP_SECRET=
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_ALLOWED_NUMBERS=41XXXXXXXXX
+WHATSAPP_GRAPH_VERSION=v26.0
+WHATSAPP_STATE_DB=whatsapp_state.db
+
+5. Aucune nouvelle dépendance Python.
+6. Lance : python app.py
+7. Vérifie : http://127.0.0.1:5000/health
+
+Nouveautés V0.4 :
+- réception/réponse WhatsApp Cloud API ;
+- liste blanche de numéros autorisés ;
+- anti-doublons sur les webhooks Meta ;
+- vérification de signature Meta si META_APP_SECRET est renseigné ;
+- endpoint /health sans exposition de secrets.

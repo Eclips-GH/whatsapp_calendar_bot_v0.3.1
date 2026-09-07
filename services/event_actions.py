@@ -39,6 +39,7 @@ def delete_event(event_or_data: dict) -> dict:
         delete_apple_event(
             calendar_name=event["calendar_name"],
             uid=event["id"],
+            resource_url=event.get("resource_url"),
         )
     else:
         raise ValueError("Source de calendrier inconnue.")
@@ -64,6 +65,7 @@ def rename_event(event_or_data: dict, new_title: str) -> dict:
         updated = update_apple_event(
             calendar_name=event["calendar_name"],
             uid=event["id"],
+            resource_url=event.get("resource_url"),
             new_title=new_title,
         )
     else:
@@ -130,6 +132,7 @@ def move_event(
         return update_apple_event(
             calendar_name=event["calendar_name"],
             uid=event["id"],
+            resource_url=event.get("resource_url"),
             new_start=new_start,
             new_end=new_end,
         )

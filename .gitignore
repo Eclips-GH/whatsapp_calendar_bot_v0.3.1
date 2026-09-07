@@ -5,3 +5,5 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+bot_state.db
+whatsapp_state.db
