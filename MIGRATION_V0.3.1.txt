@@ -1,0 +1,16 @@
+V0.3.1 — PATCH TRANSFERT ENTRE CALENDRIERS
+
+Cette mise à jour ajoute :
+- Déplace <événement> vers Apple <calendrier>
+- Déplace <événement> vers Google <calendrier>
+- Transfère <événement> vers ...
+- Déplace <événement> demain à 16h vers Apple <calendrier>
+
+IMPORTANT :
+- extraire ce ZIP PAR-DESSUS le dossier V0.3 existant ;
+- conserver .env, credentials.json, token.json, venv/ et bot_state.db ;
+- aucun nouveau pip install n'est requis.
+
+Limite V0.3.1 : le transfert inter-calendriers conserve le titre, la date,
+l'heure et la durée. Les événements récurrents et « toute la journée » sont
+bloqués volontairement pour éviter une modification destructive.
